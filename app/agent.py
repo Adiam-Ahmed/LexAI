@@ -27,9 +27,14 @@ from google.adk.tools import google_search
 from google.adk.tools.agent_tool import AgentTool
 from google.genai import types as genai_types
 from pydantic import BaseModel, Field
+from google.genai import types as genai_types
 
 from .config import config
 
+from typing import List
+import datetime
+
+from app.prompt import PLANNER_AGENT_INSTR, LEGAL_QA_INSTRUCTION, CASE_STUDY_AGENT_INSTR, SUMMARIZATION_AGENT_INSTR, INTERACTIVE_AGENT_INSTR
 
 # --- Structured Output Models ---
 class SearchQuery(BaseModel):
@@ -53,6 +58,7 @@ class Feedback(BaseModel):
         default=None,
         description="A list of specific, targeted follow-up search queries needed to fix research gaps. This should be null or empty if the grade is 'pass'.",
     )
+
 
 
 # --- Callbacks ---
@@ -178,181 +184,197 @@ class EscalationChecker(BaseAgent):
             yield Event(author=self.name)
 
 
-# --- AGENT DEFINITIONS ---
-plan_generator = LlmAgent(
-    model=config.worker_model,
-    name="plan_generator",
-    description="Generates a 4-5 line action-oriented research plan, using minimal search only for topic clarification.",
-    instruction=f"""
-    You are a research strategist. Your job is to create a high-level RESEARCH PLAN, not a summary.
-    **RULE: Your output MUST be a bulleted list of 4-5 action-oriented research goals or key questions.**
-    - A good goal starts with a verb like "Analyze," "Identify," "Investigate."
-    - A bad output is a statement of fact like "The event was in April 2024."
-    **TOOL USE IS STRICTLY LIMITED:**
-    Your goal is to create a generic, high-quality plan *without searching*.
-    Only use `google_search` if a topic is ambiguous or time-sensitive and you absolutely cannot create a plan without a key piece of identifying information.
-    You are explicitly forbidden from researching the *content* or *themes* of the topic. That is the next agent's job. Your search is only to identify the subject, not to investigate it.
-    Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
-    """,
-    tools=[google_search],
-)
 
+# --- TOOLS ---
+tools = [google_search]
+
+# --- AGENT DEFINITIONS ---
+
+plan_generator = LlmAgent(
+    name="plan_generator",
+    model="gemini-2.0-flash",
+    description="Generates a 4-5 line research plan.",
+    instruction=f"""
+    You are a research strategist creating concise, action-oriented research plans.
+    * Output must be 4-5 bullet points.
+    * Use verbs like "Analyze", "Investigate", "Compare".
+    * Avoid summaries or factual answers.
+    * Search only to disambiguate the topic.
+    Date: {datetime.datetime.now().strftime('%Y-%m-%d')}
+    """,
+    tools=tools
+)
 
 section_planner = LlmAgent(
-    model=config.worker_model,
     name="section_planner",
-    description="Breaks down the research plan into a structured markdown outline of report sections.",
+    model="gemini-2.0-flash",
+    description="Breaks the research plan into report sections.",
     instruction="""
-    You are an expert report architect. Using the research topic and the plan from the 'research_plan' state key, design a logical structure for the final report.
-    Your task is to create a markdown outline with 4-6 distinct sections that cover the topic comprehensively without overlap.
-    You can use any markdown format you prefer, but here's a suggested structure:
-    # Section Name
-    A brief overview of what this section covers
-    Feel free to add subsections or bullet points if needed to better organize the content.
-    Make sure your outline is clear and easy to follow.
-    Do not include a "References" or "Sources" section in your outline. Citations will be handled in-line.
+    Create a markdown report outline from a given research plan. Include 4–6 sections.
+    Do not include references or citations.
     """,
-    output_key="report_sections",
+    output_key="report_sections"
 )
-
 
 section_researcher = LlmAgent(
-    model=config.worker_model,
     name="section_researcher",
-    description="Performs the crucial first pass of web research.",
-    planner=BuiltInPlanner(
-        thinking_config=genai_types.ThinkingConfig(include_thoughts=True)
+    model=config.worker_model,
+    description="Performs initial web research per section.",
+    planner = BuiltInPlanner(
+        thinking_config=genai_types.ThinkingConfig(
+            include_thoughts=True,
+        )
     ),
     instruction="""
-    You are a diligent and exhaustive researcher. Your task is to perform the initial, broad information gathering for a report.
-    You will be provided with a list of sections in the 'report_sections' state key.
-    For each section where 'research' is marked as 'true', generate a comprehensive list of 4-5 targeted search queries to cover the topic from multiple angles.
-    Execute all of these queries using the 'google_search' tool and synthesize the results into a detailed summary for that section.
+    For each section marked for research, generate 4–5 search queries.
+    Run searches and synthesize a detailed summary per section.
     """,
-    tools=[google_search],
+    tools=tools,
     output_key="section_research_findings",
-    after_agent_callback=collect_research_sources_callback,
+    after_agent_callback=collect_research_sources_callback
 )
 
+
+
 research_evaluator = LlmAgent(
-    model=config.critic_model,
     name="research_evaluator",
-    description="Critically evaluates research and generates follow-up queries.",
-    instruction=f"""
-    You are a meticulous quality assurance analyst evaluating the research findings in 'section_research_findings'.
-
-    **CRITICAL RULES:**
-    1. Assume the given research topic is correct. Do not question or try to verify the subject itself.
-    2. Your ONLY job is to assess the quality, depth, and completeness of the research provided *for that topic*.
-    3. Focus on evaluating: Comprehensiveness of coverage, logical flow and organization, use of credible sources, depth of analysis, and clarity of explanations.
-    4. Do NOT fact-check or question the fundamental premise or timeline of the topic.
-    5. If suggesting follow-up queries, they should dive deeper into the existing topic, not question its validity.
-
-    Be very critical about the QUALITY of research. If you find significant gaps in depth or coverage, assign a grade of "fail",
-    write a detailed comment about what's missing, and generate 5-7 specific follow-up queries to fill those gaps.
-    If the research thoroughly covers the topic, grade "pass".
-
-    Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
-    Your response must be a single, raw JSON object validating against the 'Feedback' schema.
+    model="gemini-2.5-pro",
+    description="Evaluates research and suggests follow-up queries.",
+    instruction="""
+    Critically assess completeness, clarity, and quality of research.
+    * Grade: "pass" or "fail"
+    * If "fail", provide reasoning and 5–7 follow-up queries.
+    Date: {datetime.datetime.now().strftime('%Y-%m-%d')}
     """,
-    output_schema=Feedback,
-    disallow_transfer_to_parent=True,
-    disallow_transfer_to_peers=True,
     output_key="research_evaluation",
+    disallow_transfer_to_parent=True,
+    disallow_transfer_to_peers=True
 )
 
 enhanced_search_executor = LlmAgent(
-    model=config.worker_model,
     name="enhanced_search_executor",
-    description="Executes follow-up searches and integrates new findings.",
-    planner=BuiltInPlanner(
-        thinking_config=genai_types.ThinkingConfig(include_thoughts=True)
+    model=config.worker_model,
+    description="Executes follow-up queries and updates findings.",
+    planner = BuiltInPlanner(
+        thinking_config=genai_types.ThinkingConfig(
+            include_thoughts=True,
+        )
     ),
     instruction="""
-    You are a specialist researcher executing a refinement pass.
-    You have been activated because the previous research was graded as 'fail'.
-
-    1.  Review the 'research_evaluation' state key to understand the feedback and required fixes.
-    2.  Execute EVERY query listed in 'follow_up_queries' using the 'google_search' tool.
-    3.  Synthesize the new findings and COMBINE them with the existing information in 'section_research_findings'.
-    4.  Your output MUST be the new, complete, and improved set of research findings.
+    Use feedback to run follow-up searches. Combine with previous results into updated research.
     """,
-    tools=[google_search],
+    tools=tools,
     output_key="section_research_findings",
-    after_agent_callback=collect_research_sources_callback,
+    after_agent_callback=collect_research_sources_callback
 )
+
 
 report_composer = LlmAgent(
-    model=config.critic_model,
     name="report_composer_with_citations",
-    include_contents="none",
-    description="Transforms research data and a markdown outline into a final, cited report.",
+    model="gemini-2.5-pro",
+    description="Generates a fully cited report from research.",
     instruction="""
-    Transform the provided data into a polished, professional, and meticulously cited research report.
-
-    ---
-    ### INPUT DATA
-    *   Research Plan: `{research_plan}`
-    *   Research Findings: `{section_research_findings}`
-    *   Citation Sources: `{sources}`
-    *   Report Structure: `{report_sections}`
-
-    ---
-    ### CRITICAL: Citation System
-    To cite a source, you MUST insert a special citation tag directly after the claim it supports.
-
-    **The only correct format is:** `<cite source="src-ID_NUMBER" />`
-
-    ---
-    ### Final Instructions
-    Generate a comprehensive report using ONLY the `<cite source="src-ID_NUMBER" />` tag system for all citations.
-    The final report must strictly follow the structure provided in the **Report Structure** markdown outline.
-    Do not include a "References" or "Sources" section; all citations must be in-line.
+    Convert markdown outline and research findings into a professional report.
+    Use <cite source=\"src-ID\" /> tags for inline citations. Do not list references separately.
     """,
     output_key="final_cited_report",
-    after_agent_callback=citation_replacement_callback,
+    after_agent_callback=citation_replacement_callback
 )
+
+# --- PIPELINE AGENT ---
 
 research_pipeline = SequentialAgent(
     name="research_pipeline",
-    description="Executes a pre-approved research plan. It performs iterative research, evaluation, and composes a final, cited report.",
+    description="Executes a full research loop and report generation.",
     sub_agents=[
         section_planner,
         section_researcher,
         LoopAgent(
             name="iterative_refinement_loop",
-            max_iterations=config.max_search_iterations,
+            max_iterations=2,
             sub_agents=[
                 research_evaluator,
-                EscalationChecker(name="escalation_checker"),
-                enhanced_search_executor,
-            ],
+                enhanced_search_executor
+            ]
         ),
-        report_composer,
-    ],
+        report_composer
+    ]
 )
+
+# --- INTERACTIVE ENTRYPOINT ---
 
 interactive_planner_agent = LlmAgent(
     name="interactive_planner_agent",
-    model=config.worker_model,
-    description="The primary research assistant. It collaborates with the user to create a research plan, and then executes it upon approval.",
-    instruction=f"""
-    You are a research planning assistant. Your primary function is to convert ANY user request into a research plan.
-
-    **CRITICAL RULE: Never answer a question directly or refuse a request.** Your one and only first step is to use the `plan_generator` tool to propose a research plan for the user's topic.
-    If the user asks a question, you MUST immediately call `plan_generator` to create a plan to answer the question.
-
-    Your workflow is:
-    1.  **Plan:** Use `plan_generator` to create a draft plan and present it to the user.
-    2.  **Refine:** Incorporate user feedback until the plan is approved.
-    3.  **Execute:** Once the user gives EXPLICIT approval (e.g., "looks good, run it"), you MUST delegate the task to the `research_pipeline` agent, passing the approved plan.
-
-    Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
-    Do not perform any research yourself. Your job is to Plan, Refine, and Delegate.
-    """,
+    model="gemini-2.0-flash",
+    description="Works with the user to define and execute research goals.",
+    instruction=INTERACTIVE_AGENT_INSTR,
     sub_agents=[research_pipeline],
-    tools=[AgentTool(plan_generator)],
-    output_key="research_plan",
+    tools=[
+        AgentTool(plan_generator),
+        AgentTool(research_pipeline),
+    ],
+    output_key="research_plan"
 )
 
-root_agent = interactive_planner_agent
+# --- LEGAL WORKFLOW AGENTS ---
+
+summary_simulation_agent = LlmAgent(
+    name="SummarySimulationAgent",
+    model="gemini-2.0-flash",
+    instruction= SUMMARIZATION_AGENT_INSTR,
+    description="Clause-by-clause analyzer with risk detection.",
+    output_key="summary_simulation"
+)
+
+case_study_agent = LlmAgent(
+    name="CaseStudyAgent",
+    model="gemini-2.0-flash",
+    instruction= CASE_STUDY_AGENT_INSTR,
+    description="Interactive legal case study generator.",
+    output_key="case_study"
+)
+
+
+
+class LegalQAAgent(LlmAgent):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    async def run(self, input_data: dict):
+        question = input_data.get("question")
+        summary = input_data.get("summary")
+
+        # Use Google Search manually
+        search_results = await google_search.invoke(question)
+
+        # Build the prompt
+        prompt = LEGAL_QA_INSTRUCTION + "\n\n"
+        if summary:
+            prompt += f"Summary:\n{summary}\n\n"
+        prompt += f"Search Results:\n{search_results}\n\n"
+        prompt += f"Question:\n{question}"
+
+        # Invoke the LLM
+        return await self.invoke(prompt)
+
+# THIS is your planner-compatible agent
+legal_qa_search_agent = LegalQAAgent(
+    name="LegalQAAgent",
+    description="Answers legal questions using Google Search manually and responds in JSON format.",
+    instruction=LEGAL_QA_INSTRUCTION,
+)
+
+
+# --- MASTER ROUTING PLANNER ---
+
+
+planner_agent = LlmAgent(
+    name="LexAIPlannerAgent",
+    model="gemini-2.0-flash",
+    instruction=PLANNER_AGENT_INSTR,
+    sub_agents=[summary_simulation_agent, case_study_agent, legal_qa_search_agent, interactive_planner_agent],
+    description="Top-level planner agent routing to task-specific sub-agents."
+)
+
+# Root agent for system startup
+root_agent = planner_agent
