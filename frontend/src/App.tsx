@@ -13,10 +13,10 @@ interface MessageWithAgent {
   finalReportWithCitations?: boolean;
 }
 
-interface AgentMessage {
-  parts: { text: string }[];
-  role: string;
-}
+// interface AgentMessage {
+//   parts: { text: string }[];
+//   role: string;
+// }
 
 // interface AgentResponse {
 //   content: AgentMessage;
