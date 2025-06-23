@@ -183,17 +183,17 @@ const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
   // Show ActivityTimeline if we have processedEvents (this will be the first AI message)
   const shouldShowTimeline = processedEvents.length > 0;
   
-  // Condition for DIRECT DISPLAY (interactive_planner_agent OR final report)
+  // Condition for DIRECT DISPLAY (planner_agent OR final report)
   const shouldDisplayDirectly = 
-    agent === "interactive_planner_agent" || 
+    agent === "planner_agent" || 
     (agent === "report_composer_with_citations" && finalReportWithCitations);
   
   if (shouldDisplayDirectly) {
     // Direct display - show content with copy button, and timeline if available
     return (
       <div className="relative break-words flex flex-col w-full">
-        {/* Show timeline for interactive_planner_agent if available */}
-        {shouldShowTimeline && agent === "interactive_planner_agent" && (
+        {/* Show timeline for planner_agent if available */}
+        {shouldShowTimeline && agent === "planner_agent" && (
           <div className="w-full mb-2">
             <ActivityTimeline 
               processedEvents={processedEvents}
@@ -233,7 +233,7 @@ const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
           />
         </div>
         {/* Only show accumulated content if it's not empty and not from research agents */}
-        {message.content && message.content.trim() && agent !== "interactive_planner_agent" && (
+        {message.content && message.content.trim() && agent !== "planner_agent" && (
           <div className="flex items-start gap-3 mt-2">
             <div className="flex-1">
               <ReactMarkdown components={mdComponents}>

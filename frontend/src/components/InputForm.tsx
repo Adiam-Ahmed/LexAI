@@ -37,11 +37,11 @@ export function InputForm({ onSubmit, isLoading, context = 'homepage' }: InputFo
   const placeholderText =
     context === 'chat'
       ? "Respond to the Agent, refine the plan, or type 'Looks good'..."
-      : "Ask me anything... e.g., A report on the latest Google I/O";
+      : "Enter a legal question, upload a document, or start a case study... e.g., 'Summarize this NDA and list risks.'";
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-      <div className="flex items-end space-x-2">
+      <div className="flex flex-wrap items-end space-x-2">
         <Textarea
           ref={textareaRef}
           value={inputValue}
@@ -49,7 +49,7 @@ export function InputForm({ onSubmit, isLoading, context = 'homepage' }: InputFo
           onKeyDown={handleKeyDown}
           placeholder={placeholderText}
           rows={1}
-          className="flex-1 resize-none pr-10 min-h-[40px]"
+          className="flex-1 resize-none pr-10 min-h-[40px] bg-neutral-900 text-white border-neutral-700 focus:border-neutral-500"
         />
         <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim()}>
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
