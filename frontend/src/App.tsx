@@ -18,21 +18,21 @@ interface AgentMessage {
   role: string;
 }
 
-interface AgentResponse {
-  content: AgentMessage;
-  usageMetadata: {
-    candidatesTokenCount: number;
-    promptTokenCount: number;
-    totalTokenCount: number;
-  };
-  author: string;
-  actions: {
-    stateDelta: {
-      research_plan?: string;
-      final_report_with_citations?: boolean;
-    };
-  };
-}
+// interface AgentResponse {
+//   content: AgentMessage;
+//   usageMetadata: {
+//     candidatesTokenCount: number;
+//     promptTokenCount: number;
+//     totalTokenCount: number;
+//   };
+//   author: string;
+//   actions: {
+//     stateDelta: {
+//       research_plan?: string;
+//       final_report_with_citations?: boolean;
+//     };
+//   };
+// }
 
 interface ProcessedEvent {
   title: string;
@@ -282,7 +282,7 @@ export default function App() {
     }
   };
 
-  const handleSubmit = useCallback(async (query: string, model: string, effort: string) => {
+  const handleSubmit = useCallback(async (query: string) => {
     if (!query.trim()) return;
 
     setIsLoading(true);
@@ -468,16 +468,16 @@ export default function App() {
   }, []);
 
   // Scroll to bottom when messages update
-  const scrollToBottom = useCallback(() => {
-    if (scrollAreaRef.current) {
-      const scrollViewport = scrollAreaRef.current.querySelector(
-        "[data-radix-scroll-area-viewport]"
-      );
-      if (scrollViewport) {
-        scrollViewport.scrollTop = scrollViewport.scrollHeight;
-      }
-    }
-  }, []);
+  // const scrollToBottom = useCallback(() => {
+  //   if (scrollAreaRef.current) {
+  //     const scrollViewport = scrollAreaRef.current.querySelector(
+  //       "[data-radix-scroll-area-viewport]"
+  //     );
+  //     if (scrollViewport) {
+  //       scrollViewport.scrollTop = scrollViewport.scrollHeight;
+  //     }
+  //   }
+  // }, []);
 
   const BackendLoadingScreen = () => (
     <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden relative">
