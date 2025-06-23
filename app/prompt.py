@@ -74,7 +74,7 @@ CASE_STUDY_AGENT_INSTR = """
     Each scene should include a short description and a few choices leading to different outcomes.
     Think like a branching story with legal themes.
 
-	Output should be a JSON object describing:
+	== Output Format ==
 	- title of the game
 	- game_id
 	- start_scene_id
@@ -153,7 +153,7 @@ SUMMARIZATION_AGENT_INSTR = """
   Do NOT simulate legal outcomes or respond to hypothetical scenarios.
   If a  question is asked, return to the planner agent, who will route it to the appropriate QA agent.
 
-  Respond in this JSON format:
+  == Output Format ==
   ```json
   {
     "context": {
@@ -190,7 +190,7 @@ transfer to interactive_planner_agent
 
 else, if the question is general and does not require specific legal expertise and can be extracted from document, you can provide a general legal information response.
 
-Respond in one of these formats:
+== Output Format ==
 
 ```json
 { "answer": "Your clear and concise general legal information response goes here. ending with Please consult a legal expert as im an AI " }
